@@ -8,8 +8,8 @@ disclose it responsibly. Please report any potential security
 vulnerabilities to us by sending an email to
 [vulnerability@konghq.com](mailto:vulnerability@konghq.com).
 
-Enterprise customers can leverage the customer support channels to report 
-the vulnerabilities.
+Enterprise customers can leverage customer support channels to report
+vulnerabilities.
 
 ## How to Report
 
