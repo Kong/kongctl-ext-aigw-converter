@@ -1,13 +1,13 @@
 # Contributing
 
 This repository publishes release artifacts for the kongctl AI Gateway converter
-extension. The extension source is maintained in
-[Kong/ai-deck-converter](https://github.com/Kong/ai-deck-converter).
+extension.
 
 ## Where to Contribute
 
 For code, conversion behavior, tests, release workflow changes, or extension
-manifest changes, open issues and pull requests in `Kong/ai-deck-converter`.
+manifest changes, open an issue so maintainers can route the work to the
+appropriate source repository.
 
 Use this repository for issues specific to released extension artifacts, such
 as:
@@ -37,8 +37,8 @@ README.md
 bin/kongctl-ext-ai-gateway-converter
 ```
 
-The release workflow in `Kong/ai-deck-converter` is responsible for building
-and publishing these assets.
+Kong-maintained automation is responsible for building and publishing these
+assets.
 
 ## Security
 

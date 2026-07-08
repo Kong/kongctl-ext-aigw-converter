@@ -59,5 +59,4 @@ README.md
 bin/kongctl-ext-ai-gateway-converter
 ```
 
-The source for these release artifacts is maintained in
-`Kong/ai-deck-converter`.
+Release artifacts are built and published by Kong-maintained automation.
