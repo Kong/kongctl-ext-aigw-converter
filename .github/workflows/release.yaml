@@ -87,8 +87,49 @@ jobs:
           build_archive darwin amd64
           build_archive darwin arm64
 
+      - name: Generate Linux amd64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-linux-amd64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-linux-amd64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate Linux arm64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-linux-arm64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-linux-arm64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate macOS amd64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-darwin-amd64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-darwin-amd64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate macOS arm64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-darwin-arm64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-darwin-arm64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
           cd dist
-          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum *.tar.gz *.spdx.json > SHA256SUMS
 
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -96,6 +137,7 @@ jobs:
           name: release-assets
           path: |
             dist/*.tar.gz
+            dist/*.spdx.json
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 1
@@ -122,7 +164,7 @@ jobs:
           name: release-assets
           path: dist
 
-      - name: Attest release archives
+      - name: Attest release assets
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-checksums: dist/SHA256SUMS
@@ -132,7 +174,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            dist/*.tar.gz dist/SHA256SUMS \
+            dist/*.tar.gz dist/*.spdx.json dist/SHA256SUMS \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes

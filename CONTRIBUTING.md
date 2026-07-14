@@ -39,8 +39,8 @@ bin/kongctl-ext-ai-gateway-converter
 ```
 
 The release workflow in this repository builds and publishes these assets when
-a `v*` tag is pushed. It also publishes SHA-256 checksums and GitHub build
-provenance for each archive.
+a `v*` tag is pushed. It also publishes per-platform SPDX SBOMs, SHA-256
+checksums, and GitHub build provenance for each archive.
 
 ## Security
 
