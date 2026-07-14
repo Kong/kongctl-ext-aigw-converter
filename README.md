@@ -1,7 +1,9 @@
 # kongctl AI Gateway converter extension
 
-This repository publishes release artifacts for the `kongctl` AI Gateway
-converter extension.
+This repository contains and publishes the `kongctl` AI Gateway converter
+extension. It uses
+[`Kong/ai-deck-converter`](https://github.com/Kong/ai-deck-converter) as its
+conversion library.
 
 The extension adds:
 
@@ -48,6 +50,20 @@ kongctl convert ai-gateway aigw.yaml \
   --output-file deck.yaml
 ```
 
+## Development
+
+Build the extension runtime before linking it. kongctl extensions run an
+existing executable; they do not compile source during install or link.
+
+```sh
+make test
+make build
+kongctl link extension .
+```
+
+The extension manifest is [`kongctl-extension.yaml`](kongctl-extension.yaml).
+The runtime is built at `bin/kongctl-ext-ai-gateway-converter`.
+
 ## Releases
 
 Each release publishes platform-specific archives that `kongctl install
@@ -59,4 +75,5 @@ README.md
 bin/kongctl-ext-ai-gateway-converter
 ```
 
-Release artifacts are built and published by Kong-maintained automation.
+Pushing a `v*` tag builds and publishes the release artifacts from this
+repository.

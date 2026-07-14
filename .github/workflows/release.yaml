@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXTENSION_BINARY: kongctl-ext-ai-gateway-converter
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: make test
+
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          build_archive() {
+            local goos="$1"
+            local goarch="$2"
+            local package_dir="dist/package-${goos}-${goarch}"
+            local binary="bin/${EXTENSION_BINARY}"
+            local archive="dist/${EXTENSION_BINARY}-${goos}-${goarch}.tar.gz"
+
+            mkdir -p "${package_dir}/bin"
+            cp kongctl-extension.yaml README.md "${package_dir}/"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -o "${package_dir}/${binary}" "./cmd/${EXTENSION_BINARY}"
+            chmod +x "${package_dir}/${binary}"
+            tar -C "$package_dir" -czf "$archive" \
+              kongctl-extension.yaml README.md "$binary"
+          }
+
+          build_archive linux amd64
+          build_archive linux arm64
+          build_archive darwin amd64
+          build_archive darwin arm64
+
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/*.tar.gz dist/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
