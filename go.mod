@@ -1,6 +1,6 @@
 module github.com/Kong/kongctl-ext-aigw-converter
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/Kong/ai-deck-converter v0.1.1
