@@ -76,4 +76,11 @@ bin/kongctl-ext-ai-gateway-converter
 ```
 
 Pushing a `v*` tag builds and publishes the release artifacts from this
-repository.
+repository. Releases include SHA-256 checksums and GitHub build provenance for
+each archive. After downloading an archive, verify its provenance with:
+
+```sh
+gh attestation verify \
+  kongctl-ext-ai-gateway-converter-linux-amd64.tar.gz \
+  --repo Kong/kongctl-ext-aigw-converter
+```

@@ -107,7 +107,9 @@ jobs:
     timeout-minutes: 10
     environment: release
     permissions:
+      attestations: write # Required to publish release provenance.
       contents: write # Required to create the GitHub release.
+      id-token: write # Required to sign release provenance through OIDC.
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -119,6 +121,11 @@ jobs:
         with:
           name: release-assets
           path: dist
+
+      - name: Attest release archives
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-checksums: dist/SHA256SUMS
 
       - name: Publish release
         env:

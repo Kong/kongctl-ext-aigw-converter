@@ -48,6 +48,30 @@ func TestRunWritesOutputFile(t *testing.T) {
 	data, err := os.ReadFile(output)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "ai_gateways:")
+	info, err := os.Stat(output)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestRunRestrictsExistingOutputFilePermissions(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "aigw.yaml")
+	require.NoError(t, os.WriteFile(output, []byte("old content"), 0o644))
+	require.NoError(t, os.Chmod(output, 0o644))
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"--from", "deck",
+		"--to", "kongctl",
+		"--gateway-name", "support-ai",
+		"--output-file", output,
+	}, bytes.NewBufferString(`_format_version: "3.0"`), &stdout, &stderr)
+
+	require.NoError(t, err)
+	require.Empty(t, stdout.String())
+	require.Empty(t, stderr.String())
+	info, err := os.Stat(output)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestRunRequiresDirectionAndGateway(t *testing.T) {

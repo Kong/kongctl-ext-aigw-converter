@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,7 +81,30 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		_, err = stdout.Write(out)
 		return err
 	}
-	return os.WriteFile(opts.output, out, 0o644)
+	return writeOutput(opts.output, out)
+}
+
+func writeOutput(path string, data []byte) (err error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("open output file %q: %w", path, err)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close output file %q: %w", path, closeErr))
+		}
+	}()
+
+	if err := file.Chmod(0o600); err != nil {
+		return fmt.Errorf("secure output file %q: %w", path, err)
+	}
+	if err := file.Truncate(0); err != nil {
+		return fmt.Errorf("truncate output file %q: %w", path, err)
+	}
+	if _, err := file.Write(data); err != nil {
+		return fmt.Errorf("write output file %q: %w", path, err)
+	}
+	return nil
 }
 
 func parseArgs(args []string) (cliOptions, error) {
