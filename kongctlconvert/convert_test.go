@@ -224,6 +224,39 @@ ai_gateways:
 	require.ErrorContains(t, err, `matched 2 gateways`)
 }
 
+func TestAdaptNativeMCPServerHandlesMalformedConfig(t *testing.T) {
+	item := map[string]any{
+		"name":         "tools",
+		"upstream_url": "https://tools.example.com/mcp",
+		"config":       "invalid",
+	}
+	var warnings []string
+
+	adaptNativeChildToKongctl("mcp_servers", item, &warnings)
+
+	require.Equal(t, map[string]any{"url": "https://tools.example.com/mcp"}, item["config"])
+	require.NotContains(t, item, "upstream_url")
+}
+
+func TestAdaptKongctlMCPServerRemovesURLFromNativeConfig(t *testing.T) {
+	item := map[string]any{
+		"name": "tools",
+		"config": map[string]any{
+			"url": "https://tools.example.com/mcp",
+			"route": map[string]any{
+				"paths": []any{"/tools"},
+			},
+		},
+	}
+
+	adaptKongctlChildToNative("mcp_servers", item)
+
+	require.Equal(t, "https://tools.example.com/mcp", item["upstream_url"])
+	config := mapFromAny(item["config"])
+	require.NotContains(t, config, "url")
+	require.Contains(t, config, "route")
+}
+
 func decodeYAML(t *testing.T, data []byte) map[string]any {
 	t.Helper()
 	var doc map[string]any

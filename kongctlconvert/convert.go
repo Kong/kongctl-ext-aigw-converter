@@ -257,6 +257,9 @@ func adaptNativeChildToKongctl(kind string, item map[string]any, warnings *[]str
 	case "mcp_servers":
 		if upstreamURL := stringField(item, "upstream_url"); upstreamURL != "" {
 			config := mapFromAny(item["config"])
+			if config == nil {
+				config = map[string]any{}
+			}
 			config["url"] = upstreamURL
 			item["config"] = config
 		}
@@ -317,6 +320,12 @@ func adaptKongctlChildToNative(kind string, item map[string]any) {
 		config := mapFromAny(item["config"])
 		if url := stringField(config, "url"); url != "" {
 			item["upstream_url"] = url
+			delete(config, "url")
+			if len(config) == 0 {
+				delete(item, "config")
+			} else {
+				item["config"] = config
+			}
 		}
 	}
 }

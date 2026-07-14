@@ -88,6 +88,19 @@ func TestRunShowsHelpWithNoArgs(t *testing.T) {
 	require.Empty(t, stderr.String())
 }
 
+func TestRunShowsHelpWhenCombinedWithOtherArguments(t *testing.T) {
+	for _, helpFlag := range []string{"--help", "-h"} {
+		t.Run(helpFlag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := run([]string{"missing.yaml", helpFlag}, bytes.NewBufferString(""), &stdout, &stderr)
+
+			require.NoError(t, err)
+			require.Contains(t, stdout.String(), "Usage:")
+			require.Empty(t, stderr.String())
+		})
+	}
+}
+
 func TestParseArgsAllowsFlagsAfterInput(t *testing.T) {
 	opts, err := parseArgs([]string{
 		"deck.yaml",

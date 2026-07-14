@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Kong/kongctl-ext-aigw-converter/kongctlconvert"
@@ -175,8 +176,5 @@ func readInput(path string, stdin io.Reader) ([]byte, error) {
 }
 
 func shouldShowHelp(args []string) bool {
-	if len(args) == 0 {
-		return true
-	}
-	return len(args) == 1 && (args[0] == "--help" || args[0] == "-h")
+	return len(args) == 0 || slices.Contains(args, "--help") || slices.Contains(args, "-h")
 }
