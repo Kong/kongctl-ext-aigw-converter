@@ -205,6 +205,144 @@ ai_gateway_consumers:
 	require.NotContains(t, rendered, "ai_gateway:")
 }
 
+func TestKongctlToDeckMapsMCPAccess(t *testing.T) {
+	src := []byte(`
+ai_gateways:
+  - ref: support-ref
+    name: support-ai
+    display_name: Support AI
+    mcp_servers:
+      - ref: flights-mcp
+        type: conversion-listener
+        name: flights-mcp
+        display_name: Flights MCP
+        access:
+          default_tool_acls:
+            allow: [premium-users]
+        config:
+          route:
+            paths: [/mcp/flights]
+        tools:
+          - name: search-flights
+            description: Search available flights
+            method: GET
+            path: /flights
+            access:
+              acls:
+                allow: [agents]
+      - ref: oauth-mcp
+        type: conversion-listener
+        name: oauth-mcp
+        display_name: OAuth MCP
+        config:
+          route:
+            paths: [/mcp/oauth]
+          access:
+            acl_attribute_type: oauth_access_token
+            access_token_claim_field: .sub
+            acls:
+              deny: [blocked-users]
+            default_tool_acls:
+              allow: [trusted-users]
+        tools: []
+`)
+
+	out, warnings, err := Convert(src, Options{
+		From:        FormatKongctl,
+		To:          FormatDeck,
+		GatewayName: "support-ai",
+	})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+
+	doc := decodeYAML(t, out)
+	flightsConfig := mcpPluginConfigForService(t, doc, "flights-mcp")
+	defaultACL := mapsFromAny(flightsConfig["default_acl"])
+	require.Len(t, defaultACL, 1)
+	require.Equal(t, []any{"premium-users"}, defaultACL[0]["allow"])
+	tools := mapsFromAny(flightsConfig["tools"])
+	require.Len(t, tools, 1)
+	require.Equal(t, []any{"agents"}, mapFromAny(tools[0]["acl"])["allow"])
+
+	oauthConfig := mcpPluginConfigForService(t, doc, "oauth-mcp")
+	require.Equal(t, "oauth_access_token", oauthConfig["acl_attribute_type"])
+	require.Equal(t, ".sub", oauthConfig["access_token_claim_field"])
+	require.NotContains(t, oauthConfig, "include_consumer_groups")
+	oauthDefaultACL := mapsFromAny(oauthConfig["default_acl"])
+	require.Len(t, oauthDefaultACL, 1)
+	require.Equal(t, []any{"trusted-users"}, oauthDefaultACL[0]["allow"])
+	require.Equal(t, []any{"blocked-users"}, oauthDefaultACL[0]["deny"])
+}
+
+func TestKongctlToDeckMapsEmbeddingsModelConfig(t *testing.T) {
+	src := []byte(`
+ai_gateways:
+  - ref: support-ref
+    name: support-ai
+    display_name: Support AI
+    providers:
+      - ref: openai-main
+        type: openai
+        name: openai-main
+        display_name: OpenAI Main
+        config:
+          auth:
+            type: basic
+            headers:
+              - name: Authorization
+                value: "{vault://env/openai-key}"
+      - ref: embed-main
+        type: openai
+        name: embed-main
+        display_name: Embeddings
+        config:
+          auth:
+            type: basic
+            headers:
+              - name: Authorization
+                value: "{vault://env/embed-key}"
+    models:
+      - ref: semantic-lb
+        type: model
+        name: semantic-lb
+        display_name: Semantic LB
+        capabilities: [generate]
+        formats:
+          - type: openai
+        target_models:
+          - name: gpt-4o
+            provider: openai-main
+            config:
+              type: openai
+        config:
+          route:
+            paths: [/ai]
+          balancer:
+            algorithm: semantic
+            embeddings:
+              provider: embed-main
+              model:
+                name: text-embedding-3-small
+                config:
+                  type: openai
+`)
+
+	out, warnings, err := Convert(src, Options{
+		From:        FormatKongctl,
+		To:          FormatDeck,
+		GatewayName: "support-ai",
+	})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+
+	config := rootPluginConfig(t, decodeYAML(t, out), "ai-proxy-advanced")
+	embeddings := mapFromAny(config["embeddings"])
+	model := mapFromAny(embeddings["model"])
+	require.Equal(t, "text-embedding-3-small", model["name"])
+	require.Equal(t, "openai", model["provider"])
+	require.Equal(t, "{vault://env/embed-key}", mapFromAny(embeddings["auth"])["header_value"])
+}
+
 func TestKongctlToDeckRequiresUniqueGatewayName(t *testing.T) {
 	src := []byte(`
 ai_gateways:
@@ -262,4 +400,33 @@ func decodeYAML(t *testing.T, data []byte) map[string]any {
 	var doc map[string]any
 	require.NoError(t, yaml.Unmarshal(data, &doc))
 	return doc
+}
+
+func mcpPluginConfigForService(t *testing.T, doc map[string]any, serviceName string) map[string]any {
+	t.Helper()
+	for _, service := range mapsFromAny(doc["services"]) {
+		if stringField(service, "name") != serviceName {
+			continue
+		}
+		for _, route := range mapsFromAny(service["routes"]) {
+			for _, plugin := range mapsFromAny(route["plugins"]) {
+				if stringField(plugin, "name") == "ai-mcp-proxy" {
+					return mapFromAny(plugin["config"])
+				}
+			}
+		}
+	}
+	t.Fatalf("ai-mcp-proxy plugin for service %q not found", serviceName)
+	return nil
+}
+
+func rootPluginConfig(t *testing.T, doc map[string]any, pluginName string) map[string]any {
+	t.Helper()
+	for _, plugin := range mapsFromAny(doc["plugins"]) {
+		if stringField(plugin, "name") == pluginName {
+			return mapFromAny(plugin["config"])
+		}
+	}
+	t.Fatalf("root plugin %q not found", pluginName)
+	return nil
 }
