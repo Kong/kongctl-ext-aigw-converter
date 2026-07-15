@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  EXTENSION_BINARY: kongctl-ext-ai-gateway-converter
+
+jobs:
+  build:
+    name: Build release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+          tagged_commit="$(git rev-list -n 1 "${GITHUB_REF_NAME}")"
+          if ! git merge-base --is-ancestor "${tagged_commit}" refs/remotes/origin/main; then
+            echo "Release tag must point to a commit reachable from main" >&2
+            exit 1
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Test
+        run: make test
+
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          build_archive() {
+            local goos="$1"
+            local goarch="$2"
+            local package_dir="dist/package-${goos}-${goarch}"
+            local binary="bin/${EXTENSION_BINARY}"
+            local archive="dist/${EXTENSION_BINARY}-${goos}-${goarch}.tar.gz"
+
+            mkdir -p "${package_dir}/bin"
+            cp kongctl-extension.yaml README.md "${package_dir}/"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -o "${package_dir}/${binary}" "./cmd/${EXTENSION_BINARY}"
+            chmod +x "${package_dir}/${binary}"
+            tar -C "$package_dir" -czf "$archive" \
+              kongctl-extension.yaml README.md "$binary"
+          }
+
+          build_archive linux amd64
+          build_archive linux arm64
+          build_archive darwin amd64
+          build_archive darwin arm64
+
+      - name: Generate Linux amd64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-linux-amd64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-linux-amd64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate Linux arm64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-linux-arm64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-linux-arm64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate macOS amd64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-darwin-amd64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-darwin-amd64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate macOS arm64 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: dist/package-darwin-arm64/bin/${{ env.EXTENSION_BINARY }}
+          format: spdx-json
+          output-file: dist/${{ env.EXTENSION_BINARY }}-darwin-arm64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd dist
+          sha256sum *.tar.gz *.spdx.json > SHA256SUMS
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: |
+            dist/*.tar.gz
+            dist/*.spdx.json
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      attestations: write # Required to publish release provenance.
+      contents: write # Required to create the GitHub release.
+      id-token: write # Required to sign release provenance through OIDC.
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Attest release assets
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/*.tar.gz dist/*.spdx.json dist/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

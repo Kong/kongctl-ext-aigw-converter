@@ -1,0 +1,8 @@
+* @Kong/apiops-contributors
+
+/.github/ @Kong/apiops-maintainers
+/Makefile @Kong/apiops-maintainers
+/go.mod @Kong/apiops-maintainers
+/go.sum @Kong/apiops-maintainers
+/kongctl-extension.yaml @Kong/apiops-maintainers
+/renovate.json @Kong/apiops-maintainers
