@@ -45,3 +45,15 @@ command_paths:
       - name: label-tag-prefix
         type: string
         description: Prefix for label-derived tags.
+  - id: convert_ai_gateway_version
+    path:
+      - name: convert
+      - name: ai-gateway
+        aliases:
+          - aigw
+      - name: version
+    summary: Show AI Gateway converter version information
+    description: Shows the extension and embedded ai-deck-converter library versions.
+    usage: kongctl convert ai-gateway version
+    examples:
+      - kongctl convert ai-gateway version

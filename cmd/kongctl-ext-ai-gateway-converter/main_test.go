@@ -125,6 +125,30 @@ func TestRunShowsHelpWhenCombinedWithOtherArguments(t *testing.T) {
 	}
 }
 
+func TestRunVersionCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := runCommand(versionCommandID, nil, bytes.NewBuffer(nil), &stdout, &stderr)
+
+	require.NoError(t, err)
+	require.Contains(t, stdout.String(), "ai-gateway-converter: (devel)\n")
+	require.Contains(t, stdout.String(), "ai-deck-converter: v0.4.0\n")
+	require.Empty(t, stderr.String())
+}
+
+func TestMatchedCommandID(t *testing.T) {
+	contextPath := filepath.Join(t.TempDir(), "context.json")
+	require.NoError(t, os.WriteFile(contextPath, []byte(`{
+  "matched_command_path": {"id": "convert_ai_gateway_version"}
+}`), 0o600))
+	t.Setenv(extensionContextEnv, contextPath)
+
+	commandID, err := matchedCommandID()
+
+	require.NoError(t, err)
+	require.Equal(t, versionCommandID, commandID)
+}
+
 func TestParseArgsAllowsFlagsAfterInput(t *testing.T) {
 	opts, err := parseArgs([]string{
 		"deck.yaml",
