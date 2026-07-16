@@ -3,14 +3,24 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"slices"
 	"strings"
 
 	"github.com/Kong/kongctl-ext-aigw-converter/kongctlconvert"
+)
+
+const (
+	conversionCommandID   = "convert_ai_gateway"
+	versionCommandID      = "convert_ai_gateway_version"
+	extensionContextEnv   = "KONGCTL_EXTENSION_CONTEXT"
+	aiDeckConverterModule = "github.com/Kong/ai-deck-converter"
+	unknownVersion        = "unknown"
 )
 
 const helpText = `Convert AI Gateway configuration between decK and kongctl formats.
@@ -44,13 +54,29 @@ type cliOptions struct {
 }
 
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+	commandID, err := matchedCommandID()
+	if err == nil {
+		err = runCommand(commandID, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return runCommand("", args, stdin, stdout, stderr)
+}
+
+func runCommand(commandID string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	switch commandID {
+	case versionCommandID:
+		return writeVersion(stdout)
+	case "", conversionCommandID:
+	default:
+		return fmt.Errorf("unsupported extension command %q", commandID)
+	}
+
 	if shouldShowHelp(args) {
 		_, err := fmt.Fprint(stdout, helpText)
 		return err
@@ -82,6 +108,74 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 	return writeOutput(opts.output, out)
+}
+
+type extensionContext struct {
+	MatchedCommandPath struct {
+		ID string `json:"id"`
+	} `json:"matched_command_path"`
+}
+
+func matchedCommandID() (string, error) {
+	path := strings.TrimSpace(os.Getenv(extensionContextEnv))
+	if path == "" {
+		return "", nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open extension context: %w", err)
+	}
+	defer file.Close()
+
+	var context extensionContext
+	if err := json.NewDecoder(file).Decode(&context); err != nil {
+		return "", fmt.Errorf("decode extension context: %w", err)
+	}
+	if context.MatchedCommandPath.ID == "" {
+		return "", fmt.Errorf("extension context is missing matched_command_path.id")
+	}
+	return context.MatchedCommandPath.ID, nil
+}
+
+func writeVersion(output io.Writer) error {
+	extensionVersion, converterVersion := buildVersions()
+	_, err := fmt.Fprintf(
+		output,
+		"ai-gateway-converter: %s\nai-deck-converter: %s\n",
+		extensionVersion,
+		converterVersion,
+	)
+	return err
+}
+
+func buildVersions() (string, string) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return unknownVersion, unknownVersion
+	}
+
+	extensionVersion := normalizedVersion(info.Main.Version)
+	converterVersion := unknownVersion
+	for _, dependency := range info.Deps {
+		if dependency.Path != aiDeckConverterModule {
+			continue
+		}
+		if dependency.Replace != nil {
+			dependency = dependency.Replace
+		}
+		converterVersion = normalizedVersion(dependency.Version)
+		break
+	}
+	return extensionVersion, converterVersion
+}
+
+func normalizedVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return unknownVersion
+	}
+	return version
 }
 
 func writeOutput(path string, data []byte) (err error) {

@@ -50,6 +50,12 @@ kongctl convert ai-gateway aigw.yaml \
   --output-file deck.yaml
 ```
 
+Show the extension and embedded conversion library versions:
+
+```sh
+kongctl convert ai-gateway version
+```
+
 ## Development
 
 Build the extension runtime before linking it. kongctl extensions run an
