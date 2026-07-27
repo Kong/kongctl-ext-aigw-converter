@@ -1,8 +1,8 @@
 # kongctl AI Gateway converter extension
 
 This repository contains and publishes the `kongctl` AI Gateway converter
-extension. It uses
-`Kong/kong-ai-migration-tool` as its migration library.
+extension. It uses the [Kong AI migration tool][migration-tool] as its migration
+library.
 
 The extension adds:
 
@@ -56,7 +56,7 @@ child resource kind. Apply the complete migration in one operation:
 kongctl apply -f ./out
 ```
 
-Show the extension and embedded conversion library versions:
+Show the extension and migration library versions:
 
 ```sh
 kongctl convert ai-gateway version
@@ -106,3 +106,5 @@ gh attestation verify \
   kongctl-ext-ai-gateway-converter-linux-amd64.tar.gz \
   --repo Kong/kongctl-ext-aigw-converter
 ```
+
+[migration-tool]: https://github.com/Kong/kong-ai-migration-tool

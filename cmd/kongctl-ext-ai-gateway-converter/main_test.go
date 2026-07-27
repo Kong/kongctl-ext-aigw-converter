@@ -31,13 +31,14 @@ services:
 
 func TestRunMigratesIntoOutputDirectory(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "deck.yaml")
+	config := t.TempDir()
 	out := filepath.Join(t.TempDir(), "out")
 	require.NoError(t, os.WriteFile(input, []byte(testDeck), 0o600))
 
 	var stdout, stderr bytes.Buffer
 	err := run([]string{
 		"--input", input,
-		"--config", filepath.Join(t.TempDir(), "missing-config"),
+		"--config", config,
 		"--out", out,
 	}, &stdout, &stderr)
 
@@ -59,6 +60,12 @@ func TestRunRequiresInput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := run([]string{"--out", t.TempDir()}, &stdout, &stderr)
 	require.ErrorContains(t, err, "--input is required")
+}
+
+func TestRunRejectsFlagWithoutValue(t *testing.T) {
+	_, err := parseArgs([]string{"--input", "--out", t.TempDir()})
+
+	require.ErrorContains(t, err, "flag --input requires a value")
 }
 
 func TestRunShowsHelpWithNoArgs(t *testing.T) {

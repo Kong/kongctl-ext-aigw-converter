@@ -211,7 +211,7 @@ func nextFlagValue(args []string, index int, name, value string, hasValue bool) 
 		return value, index, nil
 	}
 	next := index + 1
-	if next >= len(args) {
+	if next >= len(args) || strings.HasPrefix(args[next], "--") {
 		return "", index, fmt.Errorf("flag --%s requires a value", name)
 	}
 	return args[next], next, nil
