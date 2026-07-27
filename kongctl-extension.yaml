@@ -2,7 +2,7 @@ schema_version: 1
 
 publisher: kong
 name: ai-gateway-converter
-summary: Convert AI Gateway configuration between decK and kongctl formats
+summary: Migrate Kong Gateway AI configuration to AI Gateway
 
 runtime:
   command: bin/kongctl-ext-ai-gateway-converter
@@ -14,37 +14,30 @@ command_paths:
       - name: ai-gateway
         aliases:
           - aigw
-    summary: Convert AI Gateway configuration
-    description: Converts Kong Gateway 3.x decK YAML and kongctl AI Gateway declarative YAML.
-    usage: kongctl convert ai-gateway <file> --from deck|kongctl --to kongctl|deck --gateway-name NAME [flags]
+    summary: Migrate AI Gateway configuration
+    description: Migrates Kong Gateway 3.x decK YAML into kongctl-ready AI Gateway resources.
+    usage: kongctl convert ai-gateway --input FILE [flags]
     examples:
-      - kongctl convert ai-gateway deck.yaml --from deck --to kongctl --gateway-name support-ai
-      - kongctl convert ai-gateway aigw.yaml --from kongctl --to deck --gateway-name support-ai
-    args:
-      - name: file
-        description: Input YAML file. Use - or omit to read from stdin.
+      - kongctl convert ai-gateway --input kong.yaml --config ./config --out ./out
     flags:
-      - name: from
+      - name: input
         type: string
-        description: "Source format: deck or kongctl."
-      - name: to
+        description: Path to the Kong Gateway decK YAML file. Required.
+      - name: config
         type: string
-        description: "Target format: kongctl or deck."
-      - name: gateway-name
+        description: Directory holding manual migration config.
+      - name: ref
         type: string
-        description: AI Gateway name to create or select.
-      - name: gateway-display-name
+        description: Path to an AI Gateway OpenAPI spec override.
+      - name: out
         type: string
-        description: Optional display_name for deck to kongctl output.
-      - name: output-file
-        type: string
-        description: Write converted YAML to this file instead of stdout.
-      - name: strict
-        type: bool
-        description: Treat conversion warnings as errors.
+        description: Output directory for migrated resources.
       - name: label-tag-prefix
         type: string
-        description: Prefix for label-derived tags.
+        description: Tag prefix lifted back into labels.
+      - name: namespace-prefix
+        type: string
+        description: kongctl namespace prefix for generated files.
   - id: convert_ai_gateway_version
     path:
       - name: convert
@@ -53,7 +46,7 @@ command_paths:
           - aigw
       - name: version
     summary: Show AI Gateway converter version information
-    description: Shows the extension and embedded ai-deck-converter library versions.
+    description: Shows the extension and embedded kong-ai-migration-tool versions.
     usage: kongctl convert ai-gateway version
     examples:
       - kongctl convert ai-gateway version

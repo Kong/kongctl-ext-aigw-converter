@@ -9,130 +9,119 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRunConvertsStdinToKongctl(t *testing.T) {
-	input := `
+const testDeck = `
 _format_version: "3.0"
-services: []
+services:
+  - name: openai-chat
+    url: https://api.openai.com
+    routes:
+      - name: openai-chat
+        paths: [/chat]
+        plugins:
+          - name: ai-proxy
+            config:
+              route_type: llm/v1/chat
+              model:
+                provider: openai
+                name: gpt-4o
+              auth:
+                header_name: Authorization
+                header_value: "{vault://env/openai-key}"
 `
-	var stdout, stderr bytes.Buffer
 
-	err := run([]string{
-		"--from", "deck",
-		"--to", "kongctl",
-		"--gateway-name", "support-ai",
-	}, bytes.NewBufferString(input), &stdout, &stderr)
-
-	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "ai_gateways:")
-	require.Contains(t, stdout.String(), "name: support-ai")
-	require.Empty(t, stderr.String())
-}
-
-func TestRunWritesOutputFile(t *testing.T) {
+func TestRunMigratesIntoOutputDirectory(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "deck.yaml")
-	output := filepath.Join(t.TempDir(), "aigw.yaml")
-	require.NoError(t, os.WriteFile(input, []byte(`_format_version: "3.0"`), 0o644))
+	out := filepath.Join(t.TempDir(), "out")
+	require.NoError(t, os.WriteFile(input, []byte(testDeck), 0o600))
 
 	var stdout, stderr bytes.Buffer
 	err := run([]string{
-		input,
-		"--from=deck",
-		"--to=kongctl",
-		"--gateway-name=support-ai",
-		"--output-file", output,
-	}, bytes.NewBuffer(nil), &stdout, &stderr)
+		"--input", input,
+		"--config", filepath.Join(t.TempDir(), "missing-config"),
+		"--out", out,
+	}, &stdout, &stderr)
 
 	require.NoError(t, err)
 	require.Empty(t, stdout.String())
-	require.Empty(t, stderr.String())
-	data, err := os.ReadFile(output)
+	require.Contains(t, stderr.String(), "migration complete: wrote output to "+out)
+	require.FileExists(t, filepath.Join(out, "gateway.yaml"))
+	require.FileExists(t, filepath.Join(out, "models.yaml"))
+	require.FileExists(t, filepath.Join(out, "providers.yaml"))
+
+	models, err := os.ReadFile(filepath.Join(out, "models.yaml"))
 	require.NoError(t, err)
-	require.Contains(t, string(data), "ai_gateways:")
-	info, err := os.Stat(output)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	require.Contains(t, string(models), "ai_gateway_models:")
+	require.Contains(t, string(models), "ai_gateway: !ref ai-gateway#id")
+	require.Contains(t, string(models), "targets:")
 }
 
-func TestRunRestrictsExistingOutputFilePermissions(t *testing.T) {
-	output := filepath.Join(t.TempDir(), "aigw.yaml")
-	require.NoError(t, os.WriteFile(output, []byte("old content"), 0o644))
-	require.NoError(t, os.Chmod(output, 0o644))
-
+func TestRunRequiresInput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := run([]string{
-		"--from", "deck",
-		"--to", "kongctl",
-		"--gateway-name", "support-ai",
-		"--output-file", output,
-	}, bytes.NewBufferString(`_format_version: "3.0"`), &stdout, &stderr)
-
-	require.NoError(t, err)
-	require.Empty(t, stdout.String())
-	require.Empty(t, stderr.String())
-	info, err := os.Stat(output)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-}
-
-func TestRunRequiresDirectionAndGateway(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	err := run([]string{"--from", "deck", "--to", "kongctl"}, bytes.NewBufferString(""), &stdout, &stderr)
-	require.ErrorContains(t, err, "--gateway-name is required")
-}
-
-func TestRunIgnoresKongctlOutputContext(t *testing.T) {
-	contextPath := filepath.Join(t.TempDir(), "context.json")
-	require.NoError(t, os.WriteFile(contextPath, []byte(`{
-  "resolved": {"output": "yaml"},
-  "output": {"format": "yaml"}
-}`), 0o600))
-	t.Setenv("KONGCTL_EXTENSION_CONTEXT", contextPath)
-
-	var stdout, stderr bytes.Buffer
-	err := run([]string{
-		"--from", "deck",
-		"--to", "kongctl",
-		"--gateway-name", "support-ai",
-	}, bytes.NewBufferString(`_format_version: "3.0"`), &stdout, &stderr)
-
-	require.NoError(t, err)
-	require.Contains(t, stdout.String(), "ai_gateways:")
-	require.Empty(t, stderr.String())
+	err := run([]string{"--out", t.TempDir()}, &stdout, &stderr)
+	require.ErrorContains(t, err, "--input is required")
 }
 
 func TestRunShowsHelpWithNoArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := run(nil, bytes.NewBufferString(""), &stdout, &stderr)
+	err := run(nil, &stdout, &stderr)
 
 	require.NoError(t, err)
 	require.Contains(t, stdout.String(), "Usage:")
-	require.Contains(t, stdout.String(), "kongctl convert ai-gateway <file>")
-	require.Contains(t, stdout.String(), "--gateway-display-name string")
-	require.Contains(t, stdout.String(), "--label-tag-prefix string")
+	require.Contains(t, stdout.String(), "--namespace-prefix string")
 	require.Empty(t, stderr.String())
 }
 
-func TestRunShowsHelpWhenCombinedWithOtherArguments(t *testing.T) {
-	for _, helpFlag := range []string{"--help", "-h"} {
-		t.Run(helpFlag, func(t *testing.T) {
-			var stdout, stderr bytes.Buffer
-			err := run([]string{"missing.yaml", helpFlag}, bytes.NewBufferString(""), &stdout, &stderr)
-
-			require.NoError(t, err)
-			require.Contains(t, stdout.String(), "Usage:")
-			require.Empty(t, stderr.String())
-		})
+func TestRunRejectsRemovedAndPositionalArguments(t *testing.T) {
+	tests := [][]string{
+		{"deck.yaml"},
+		{"--from", "deck"},
+		{"--to", "kongctl"},
+		{"--gateway-name", "support-ai"},
+		{"--output-file", "out.yaml"},
+		{"--strict"},
 	}
+	for _, args := range tests {
+		_, err := parseArgs(args)
+		require.Error(t, err, "args: %v", args)
+	}
+}
+
+func TestParseArgsSupportsMigrationFlags(t *testing.T) {
+	opts, err := parseArgs([]string{
+		"--input=deck.yaml",
+		"--config", "./manual",
+		"--ref=./schema.json",
+		"--out", "./generated",
+		"--label-tag-prefix=aigw/",
+		"--namespace-prefix", "support-ai",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "deck.yaml", opts.migrate.InputPath)
+	require.Equal(t, "./manual", opts.migrate.ConfigDir)
+	require.Equal(t, "./schema.json", opts.migrate.RefPath)
+	require.Equal(t, "./generated", opts.migrate.OutDir)
+	require.Equal(t, "aigw/", opts.migrate.LabelTagPrefix)
+	require.Equal(t, "support-ai", opts.migrate.NamespacePrefix)
+}
+
+func TestParseArgsUsesMigrationDefaults(t *testing.T) {
+	opts, err := parseArgs([]string{"--input", "deck.yaml"})
+
+	require.NoError(t, err)
+	require.Equal(t, "./config", opts.migrate.ConfigDir)
+	require.Empty(t, opts.migrate.RefPath)
+	require.Equal(t, "./out", opts.migrate.OutDir)
+	require.Equal(t, "ai-gateway", opts.migrate.NamespacePrefix)
 }
 
 func TestRunVersionCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-
-	err := runCommand(versionCommandID, nil, bytes.NewBuffer(nil), &stdout, &stderr)
+	err := runCommand(versionCommandID, nil, &stdout, &stderr)
 
 	require.NoError(t, err)
 	require.Contains(t, stdout.String(), "ai-gateway-converter: (devel)\n")
-	require.Contains(t, stdout.String(), "ai-deck-converter: v0.4.0\n")
+	require.Contains(t, stdout.String(), "kong-ai-migration-tool:")
 	require.Empty(t, stderr.String())
 }
 
@@ -147,21 +136,4 @@ func TestMatchedCommandID(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, versionCommandID, commandID)
-}
-
-func TestParseArgsAllowsFlagsAfterInput(t *testing.T) {
-	opts, err := parseArgs([]string{
-		"deck.yaml",
-		"--from", "deck",
-		"--to", "kongctl",
-		"--gateway-name", "support-ai",
-		"--strict",
-	})
-
-	require.NoError(t, err)
-	require.Equal(t, "deck.yaml", opts.input)
-	require.Equal(t, "deck", opts.convert.From)
-	require.Equal(t, "kongctl", opts.convert.To)
-	require.Equal(t, "support-ai", opts.convert.GatewayName)
-	require.True(t, opts.convert.Strict)
 }
