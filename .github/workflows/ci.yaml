@@ -29,6 +29,24 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Configure private module access
+        shell: bash
+        env:
+          GH_TOKEN_PRIVATE_READ: ${{ secrets.GH_TOKEN_PRIVATE_READ }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN_PRIVATE_READ:-}" ]; then
+            echo "::error::GH_TOKEN_PRIVATE_READ is required for kong-ai-migration-tool"
+            exit 1
+          fi
+
+          git config --global \
+            url."https://x-access-token:${GH_TOKEN_PRIVATE_READ}@github.com/".insteadOf \
+            "https://github.com/"
+          echo "GOPRIVATE=github.com/Kong/kong-ai-migration-tool" >> "${GITHUB_ENV}"
+          echo "GONOSUMDB=github.com/Kong/kong-ai-migration-tool" >> "${GITHUB_ENV}"
+
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:

@@ -1,10 +1,9 @@
-// Command kongctl-ext-ai-gateway-converter converts AI Gateway configuration
-// between Kong Gateway decK and kongctl declarative formats.
+// Command kongctl-ext-ai-gateway-converter migrates Kong Gateway AI
+// configuration into kongctl-ready AI Gateway resources.
 package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,51 +11,44 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Kong/kongctl-ext-aigw-converter/kongctlconvert"
+	"github.com/Kong/kong-ai-migration-tool/migrate"
 )
 
 const (
-	conversionCommandID   = "convert_ai_gateway"
-	versionCommandID      = "convert_ai_gateway_version"
-	extensionContextEnv   = "KONGCTL_EXTENSION_CONTEXT"
-	aiDeckConverterModule = "github.com/Kong/ai-deck-converter"
-	unknownVersion        = "unknown"
+	conversionCommandID = "convert_ai_gateway"
+	versionCommandID    = "convert_ai_gateway_version"
+	extensionContextEnv = "KONGCTL_EXTENSION_CONTEXT"
+	migrationToolModule = "github.com/Kong/kong-ai-migration-tool"
+	unknownVersion      = "unknown"
 )
 
-const helpText = `Convert AI Gateway configuration between decK and kongctl formats.
+const helpText = `Migrate Kong Gateway AI configuration into kongctl-ready AI Gateway resources.
 
 Usage:
-  kongctl convert ai-gateway <file> --from deck|kongctl --to kongctl|deck --gateway-name NAME [flags]
-
-Arguments:
-  file                         Input YAML file. Use - or omit to read from stdin.
+  kongctl convert ai-gateway --input FILE [flags]
 
 Flags:
-      --from string            Source format: deck or kongctl.
-      --to string              Target format: kongctl or deck.
-      --gateway-name string    AI Gateway name to create or select.
-      --gateway-display-name string
-                               Optional display_name for deck to kongctl output.
-      --output-file string     Write converted YAML to this file instead of stdout.
-      --strict                 Treat conversion warnings as errors.
+      --input string           Path to the Kong Gateway decK YAML file. Required.
+      --config string          Directory holding manual migration config. (default "./config")
+      --ref string             Path to an AI Gateway OpenAPI spec override.
+      --out string             Output directory for migrated resources. (default "./out")
       --label-tag-prefix string
-                               Prefix for label-derived tags.
+                               Tag prefix lifted back into labels.
+      --namespace-prefix string
+                               kongctl namespace prefix for generated files. (default "ai-gateway")
 
-Examples:
-  kongctl convert ai-gateway deck.yaml --from deck --to kongctl --gateway-name support-ai
-  kongctl convert ai-gateway aigw.yaml --from kongctl --to deck --gateway-name support-ai
+Example:
+  kongctl convert ai-gateway --input kong.yaml --config ./config --out ./out
 `
 
 type cliOptions struct {
-	convert kongctlconvert.Options
-	input   string
-	output  string
+	migrate migrate.Options
 }
 
 func main() {
 	commandID, err := matchedCommandID()
 	if err == nil {
-		err = runCommand(commandID, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+		err = runCommand(commandID, os.Args[1:], os.Stdout, os.Stderr)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -64,11 +56,11 @@ func main() {
 	}
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	return runCommand("", args, stdin, stdout, stderr)
+func run(args []string, stdout, stderr io.Writer) error {
+	return runCommand("", args, stdout, stderr)
 }
 
-func runCommand(commandID string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func runCommand(commandID string, args []string, stdout, stderr io.Writer) error {
 	switch commandID {
 	case versionCommandID:
 		return writeVersion(stdout)
@@ -87,27 +79,15 @@ func runCommand(commandID string, args []string, stdin io.Reader, stdout, stderr
 		return err
 	}
 
-	in, err := readInput(opts.input, stdin)
-	if err != nil {
-		return err
-	}
-
-	out, warnings, err := kongctlconvert.Convert(in, opts.convert)
-	if err != nil {
-		for _, warning := range warnings {
-			fmt.Fprintln(stderr, "warning:", warning)
-		}
-		return err
-	}
-	for _, warning := range warnings {
+	result, err := migrate.Run(opts.migrate)
+	for _, warning := range result.Warnings {
 		fmt.Fprintln(stderr, "warning:", warning)
 	}
-
-	if opts.output == "" || opts.output == "-" {
-		_, err = stdout.Write(out)
+	if err != nil {
 		return err
 	}
-	return writeOutput(opts.output, out)
+	_, err = fmt.Fprintf(stderr, "migration complete: wrote output to %s\n", opts.migrate.OutDir)
+	return err
 }
 
 type extensionContext struct {
@@ -139,12 +119,12 @@ func matchedCommandID() (string, error) {
 }
 
 func writeVersion(output io.Writer) error {
-	extensionVersion, converterVersion := buildVersions()
+	extensionVersion, migrationVersion := buildVersions()
 	_, err := fmt.Fprintf(
 		output,
-		"ai-gateway-converter: %s\nai-deck-converter: %s\n",
+		"ai-gateway-converter: %s\nkong-ai-migration-tool: %s\n",
 		extensionVersion,
-		converterVersion,
+		migrationVersion,
 	)
 	return err
 }
@@ -156,18 +136,18 @@ func buildVersions() (string, string) {
 	}
 
 	extensionVersion := normalizedVersion(info.Main.Version)
-	converterVersion := unknownVersion
+	migrationVersion := unknownVersion
 	for _, dependency := range info.Deps {
-		if dependency.Path != aiDeckConverterModule {
+		if dependency.Path != migrationToolModule {
 			continue
 		}
 		if dependency.Replace != nil {
 			dependency = dependency.Replace
 		}
-		converterVersion = normalizedVersion(dependency.Version)
+		migrationVersion = normalizedVersion(dependency.Version)
 		break
 	}
-	return extensionVersion, converterVersion
+	return extensionVersion, migrationVersion
 }
 
 func normalizedVersion(version string) string {
@@ -178,99 +158,50 @@ func normalizedVersion(version string) string {
 	return version
 }
 
-func writeOutput(path string, data []byte) (err error) {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
-	if err != nil {
-		return fmt.Errorf("open output file %q: %w", path, err)
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close output file %q: %w", path, closeErr))
-		}
-	}()
-
-	if err := file.Chmod(0o600); err != nil {
-		return fmt.Errorf("secure output file %q: %w", path, err)
-	}
-	if err := file.Truncate(0); err != nil {
-		return fmt.Errorf("truncate output file %q: %w", path, err)
-	}
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write output file %q: %w", path, err)
-	}
-	return nil
-}
-
 func parseArgs(args []string) (cliOptions, error) {
-	var opts cliOptions
-	var err error
+	opts := cliOptions{migrate: migrate.Options{
+		ConfigDir:       "./config",
+		OutDir:          "./out",
+		NamespacePrefix: "ai-gateway",
+	}}
+
 	for i := 0; i < len(args); i++ {
 		token := args[i]
 		if token == "" {
 			continue
 		}
-		if !strings.HasPrefix(token, "-") || token == "-" {
-			if opts.input != "" {
-				return cliOptions{}, fmt.Errorf("too many input files: %q and %q", opts.input, token)
-			}
-			opts.input = token
-			continue
+		if !strings.HasPrefix(token, "--") {
+			return cliOptions{}, fmt.Errorf("unexpected positional argument %q", token)
 		}
 
 		name, value, hasValue := strings.Cut(strings.TrimPrefix(token, "--"), "=")
+		var err error
+		value, i, err = nextFlagValue(args, i, name, value, hasValue)
+		if err != nil {
+			return cliOptions{}, err
+		}
+
 		switch name {
-		case "from":
-			value, i, err = nextFlagValue(args, i, name, value, hasValue)
-			if err != nil {
-				return cliOptions{}, err
-			}
-			opts.convert.From = value
-		case "to":
-			value, i, err = nextFlagValue(args, i, name, value, hasValue)
-			if err != nil {
-				return cliOptions{}, err
-			}
-			opts.convert.To = value
-		case "gateway-name":
-			value, i, err = nextFlagValue(args, i, name, value, hasValue)
-			if err != nil {
-				return cliOptions{}, err
-			}
-			opts.convert.GatewayName = value
-		case "gateway-display-name":
-			value, i, err = nextFlagValue(args, i, name, value, hasValue)
-			if err != nil {
-				return cliOptions{}, err
-			}
-			opts.convert.GatewayDisplayName = value
-		case "output-file":
-			value, i, err = nextFlagValue(args, i, name, value, hasValue)
-			if err != nil {
-				return cliOptions{}, err
-			}
-			opts.output = value
+		case "input":
+			opts.migrate.InputPath = value
+		case "config":
+			opts.migrate.ConfigDir = value
+		case "ref":
+			opts.migrate.RefPath = value
+		case "out":
+			opts.migrate.OutDir = value
 		case "label-tag-prefix":
-			value, i, err = nextFlagValue(args, i, name, value, hasValue)
-			if err != nil {
-				return cliOptions{}, err
-			}
-			opts.convert.LabelTagPrefix = value
-		case "strict":
-			if hasValue {
-				switch value {
-				case "true":
-					opts.convert.Strict = true
-				case "false":
-					opts.convert.Strict = false
-				default:
-					return cliOptions{}, fmt.Errorf("flag --strict requires true or false")
-				}
-			} else {
-				opts.convert.Strict = true
-			}
+			opts.migrate.LabelTagPrefix = value
+		case "namespace-prefix":
+			opts.migrate.NamespacePrefix = value
 		default:
 			return cliOptions{}, fmt.Errorf("unknown flag --%s", name)
 		}
+	}
+
+	opts.migrate.InputPath = strings.TrimSpace(opts.migrate.InputPath)
+	if opts.migrate.InputPath == "" {
+		return cliOptions{}, fmt.Errorf("--input is required")
 	}
 	return opts, nil
 }
@@ -280,17 +211,10 @@ func nextFlagValue(args []string, index int, name, value string, hasValue bool) 
 		return value, index, nil
 	}
 	next := index + 1
-	if next >= len(args) {
+	if next >= len(args) || strings.HasPrefix(args[next], "--") {
 		return "", index, fmt.Errorf("flag --%s requires a value", name)
 	}
 	return args[next], next, nil
-}
-
-func readInput(path string, stdin io.Reader) ([]byte, error) {
-	if path == "" || path == "-" {
-		return io.ReadAll(stdin)
-	}
-	return os.ReadFile(path)
 }
 
 func shouldShowHelp(args []string) bool {

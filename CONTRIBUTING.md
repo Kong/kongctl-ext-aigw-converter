@@ -5,10 +5,9 @@ extension.
 
 ## Where to Contribute
 
-Use this repository for extension command behavior, the kongctl format adapter,
-tests, manifest changes, release automation, and released artifacts. For changes
-to the underlying conversion engine, contribute to
-[`Kong/ai-deck-converter`](https://github.com/Kong/ai-deck-converter).
+Use this repository for extension command behavior, tests, manifest changes,
+release automation, and released artifacts. For changes to the underlying
+migration engine, contribute to `Kong/kong-ai-migration-tool`.
 
 Useful issue reports include:
 
