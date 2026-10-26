@@ -188,11 +188,20 @@ jobs:
           subject-checksums: dist/SHA256SUMS
 
       - name: Publish release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+
+          release_flags=()
+          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+            release_flags+=(--prerelease --latest=false)
+          fi
+
           gh release create "${GITHUB_REF_NAME}" \
             dist/*.tar.gz dist/*.spdx.json dist/SHA256SUMS \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+            --generate-notes \
+            "${release_flags[@]}"

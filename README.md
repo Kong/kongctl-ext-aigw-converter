@@ -23,11 +23,14 @@ Install the latest compatible release:
 kongctl install extension Kong/kongctl-ext-aigw-converter
 ```
 
-Install a specific release:
+Install the opt-in preview release:
 
 ```sh
-kongctl install extension Kong/kongctl-ext-aigw-converter@v0.6.0
+kongctl install extension Kong/kongctl-ext-aigw-converter@v0.6.0-rc.1
 ```
+
+Prereleases require an explicit version. Unversioned installs continue to use
+GitHub's latest stable release.
 
 ## Usage
 
@@ -159,7 +162,11 @@ bin/kongctl-ext-ai-gateway-converter
 ```
 
 Pushing a `v*` tag builds and publishes the release artifacts from this
-repository. Releases include per-platform SPDX SBOMs, SHA-256 checksums, and
+repository. Tags with a prerelease suffix, such as `v0.6.0-rc.1`, publish as
+GitHub prereleases with `latest` explicitly disabled. Stable tags retain the
+normal latest-release behavior.
+
+Releases include per-platform SPDX SBOMs, SHA-256 checksums, and
 GitHub build provenance for each archive. CI and release workflows require the
 `GH_TOKEN_PRIVATE_READ` secret to read the migration library. After downloading
 an archive, verify its provenance with:
