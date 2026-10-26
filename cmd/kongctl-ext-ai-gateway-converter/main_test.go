@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Kong/kong-ai-migration-tool/migrate"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,6 +47,9 @@ func TestRunMigratesIntoOutputDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, stdout.String())
 	require.Contains(t, stderr.String(), "migration complete: wrote output to "+out)
+	require.Contains(t, stderr.String(), "findings:")
+	require.Contains(t, stderr.String(), filepath.Join(out, "migration-report.md"))
+	require.FileExists(t, filepath.Join(out, "migration-report.json"))
 	require.FileExists(t, filepath.Join(out, "gateway.yaml"))
 	require.FileExists(t, filepath.Join(out, "models.yaml"))
 	require.FileExists(t, filepath.Join(out, "providers.yaml"))
@@ -52,7 +57,7 @@ func TestRunMigratesIntoOutputDirectory(t *testing.T) {
 	models, err := os.ReadFile(filepath.Join(out, "models.yaml"))
 	require.NoError(t, err)
 	require.Contains(t, string(models), "ai_gateway_models:")
-	require.Contains(t, string(models), "ai_gateway: !ref ai-gateway#id")
+	require.Contains(t, string(models), "ai_gateway: !ref ai-gateway-deck#id")
 	require.Contains(t, string(models), "targets:")
 }
 
@@ -85,7 +90,6 @@ func TestRunRejectsRemovedAndPositionalArguments(t *testing.T) {
 		{"--to", "kongctl"},
 		{"--gateway-name", "support-ai"},
 		{"--output-file", "out.yaml"},
-		{"--strict"},
 	}
 	for _, args := range tests {
 		_, err := parseArgs(args)
@@ -101,6 +105,13 @@ func TestParseArgsSupportsMigrationFlags(t *testing.T) {
 		"--out", "./generated",
 		"--label-tag-prefix=aigw/",
 		"--namespace-prefix", "support-ai",
+		"--input-format=terraform",
+		"--source-name", "support",
+		"--format=kongctl,deck,kong-operator,terraform",
+		"--operator-gateway", "onprem",
+		"--k8s-namespace", "ai",
+		"--konnect-server-url=eu.api.konghq.com",
+		"--strict",
 	})
 
 	require.NoError(t, err)
@@ -110,6 +121,16 @@ func TestParseArgsSupportsMigrationFlags(t *testing.T) {
 	require.Equal(t, "./generated", opts.migrate.OutDir)
 	require.Equal(t, "aigw/", opts.migrate.LabelTagPrefix)
 	require.Equal(t, "support-ai", opts.migrate.NamespacePrefix)
+	require.Equal(t, migrate.InputTerraform, opts.migrate.InputFormat)
+	require.Equal(t, "support", opts.migrate.SourceName)
+	require.Equal(t, []migrate.Format{
+		migrate.FormatKongctl, migrate.FormatDeck,
+		migrate.FormatKongOperator, migrate.FormatTerraform,
+	}, opts.migrate.Formats)
+	require.Equal(t, migrate.OperatorGatewayOnPrem, opts.migrate.OperatorGateway)
+	require.Equal(t, "ai", opts.migrate.K8sNamespace)
+	require.Equal(t, "eu.api.konghq.com", opts.migrate.KonnectServerURL)
+	require.True(t, opts.migrate.Strict)
 }
 
 func TestParseArgsUsesMigrationDefaults(t *testing.T) {
@@ -120,6 +141,13 @@ func TestParseArgsUsesMigrationDefaults(t *testing.T) {
 	require.Empty(t, opts.migrate.RefPath)
 	require.Equal(t, "./out", opts.migrate.OutDir)
 	require.Equal(t, "ai-gateway", opts.migrate.NamespacePrefix)
+	require.Empty(t, opts.migrate.InputFormat)
+	require.Empty(t, opts.migrate.SourceName)
+	require.Equal(t, []migrate.Format{migrate.FormatKongctl}, opts.migrate.Formats)
+	require.Equal(t, migrate.OperatorGatewayKonnect, opts.migrate.OperatorGateway)
+	require.Empty(t, opts.migrate.K8sNamespace)
+	require.Equal(t, migrate.DefaultKonnectServerURL, opts.migrate.KonnectServerURL)
+	require.False(t, opts.migrate.Strict)
 }
 
 func TestRunVersionCommand(t *testing.T) {
@@ -143,4 +171,87 @@ func TestMatchedCommandID(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, versionCommandID, commandID)
+}
+
+func TestParseArgsRejectsInvalidMigrationOptions(t *testing.T) {
+	for _, args := range [][]string{
+		{"--input-format=unknown"},
+		{"--format=unknown"},
+		{"--operator-gateway=unknown"},
+		{"--strict=maybe"},
+		{"--strict", "false"},
+		{"--input-format"},
+		{"--format"},
+	} {
+		_, err := parseArgs(append([]string{"--input=deck.yaml"}, args...))
+		require.Error(t, err, "args: %v", args)
+	}
+}
+
+func TestParseArgsStrictBoolean(t *testing.T) {
+	for _, value := range []string{"false", "0", "true", "1"} {
+		opts, err := parseArgs([]string{"--input=deck.yaml", "--strict=" + value})
+		require.NoError(t, err)
+		require.Equal(t, value == "true" || value == "1", opts.migrate.Strict)
+	}
+	opts, err := parseArgs([]string{"--strict", "--strict=false", "--input=deck.yaml"})
+	require.NoError(t, err)
+	require.False(t, opts.migrate.Strict)
+}
+
+func TestRunMultipleOutputFormats(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "deck.yaml")
+	require.NoError(t, os.WriteFile(input, []byte(testDeck), 0o600))
+	out := filepath.Join(t.TempDir(), "out")
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"--input", input, "--config", t.TempDir(), "--out", out,
+		"--format=kongctl,deck,kong-operator,terraform", "--source-name=support",
+		"--operator-gateway=onprem", "--k8s-namespace=ai",
+		"--konnect-server-url=eu.api.konghq.com",
+	}, &stdout, &stderr)
+	require.NoError(t, err)
+	require.Empty(t, stdout.String())
+	for _, file := range []string{
+		"kongctl/models.yaml", "deck/ai-gateway.yaml",
+		"kong-operator/models.yaml", "terraform/models.tf", "migration-report.md",
+	} {
+		require.FileExists(t, filepath.Join(out, file))
+	}
+	gateway, err := os.ReadFile(filepath.Join(out, "kong-operator", "gateway.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(gateway), "OnPremAIGateway")
+	require.Contains(t, string(gateway), "namespace: ai")
+}
+
+func TestRunStrictFindings(t *testing.T) {
+	// A globally scoped AI plugin cannot be represented in AI Gateway 2.x.
+	input := filepath.Join(t.TempDir(), "deck.yaml")
+	deck := testDeck + `
+plugins:
+- name: ai-proxy
+  config:
+    route_type: llm/v1/chat
+    model: {provider: openai, name: gpt-4o}
+`
+	require.NoError(t, os.WriteFile(input, []byte(deck), 0o600))
+	for _, strict := range []bool{false, true} {
+		out := filepath.Join(t.TempDir(), "out")
+		args := []string{"--input", input, "--config", t.TempDir(), "--out", out}
+		if strict {
+			args = append(args, "--strict")
+		}
+		var stdout, stderr bytes.Buffer
+		err := run(args, &stdout, &stderr)
+		if strict {
+			require.Error(t, err)
+			require.NoDirExists(t, out)
+			require.NotContains(t, stderr.String(), "migration complete:")
+		} else {
+			require.NoError(t, err)
+			require.Contains(t, stderr.String(), "error:")
+			require.Contains(t, stderr.String(), "findings:")
+			require.FileExists(t, filepath.Join(out, "migration-report.md"))
+		}
+	}
 }
