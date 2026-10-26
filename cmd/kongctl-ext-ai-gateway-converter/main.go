@@ -1,5 +1,5 @@
 // Command kongctl-ext-ai-gateway-converter migrates Kong Gateway AI
-// configuration into kongctl-ready AI Gateway resources.
+// configuration into AI Gateway resources.
 package main
 
 import (
@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Kong/kong-ai-migration-tool/migrate"
@@ -22,13 +24,14 @@ const (
 	unknownVersion      = "unknown"
 )
 
-const helpText = `Migrate Kong Gateway AI configuration into kongctl-ready AI Gateway resources.
+const helpText = `Migrate Kong Gateway AI configuration into AI Gateway resources.
 
 Usage:
-  kongctl convert ai-gateway --input FILE [flags]
+  kongctl convert ai-gateway --input PATH [flags]
 
 Flags:
-      --input string           Path to the Kong Gateway decK YAML file. Required.
+      --input string           Source decK file, Kong Operator manifests, or Terraform config. Required.
+      --input-format string    Input format: auto, deck, kong-operator, terraform. (default "auto")
       --config string          Directory holding manual migration config. (default "./config")
       --ref string             Path to an AI Gateway OpenAPI spec override.
       --out string             Output directory for migrated resources. (default "./out")
@@ -36,6 +39,14 @@ Flags:
                                Tag prefix lifted back into labels.
       --namespace-prefix string
                                kongctl namespace prefix for generated files. (default "ai-gateway")
+      --source-name string     Migrated control plane name. (default: input filename)
+      --strict                 Fail on migration findings instead of collecting them.
+      --format string          Comma-separated outputs: kongctl, deck, kong-operator, terraform. (default "kongctl")
+      --operator-gateway string
+                               Kong Operator parent: konnect or onprem. (default "konnect")
+      --k8s-namespace string    Namespace for Kong Operator manifests.
+      --konnect-server-url string
+                               Konnect API host for Operator and Terraform. (default "us.api.konghq.com")
 
 Example:
   kongctl convert ai-gateway --input kong.yaml --config ./config --out ./out
@@ -81,12 +92,21 @@ func runCommand(commandID string, args []string, stdout, stderr io.Writer) error
 
 	result, err := migrate.Run(opts.migrate)
 	for _, warning := range result.Warnings {
-		fmt.Fprintln(stderr, "warning:", warning)
+		fmt.Fprintf(stderr, "%s: %s\n", warning.Severity, warning.String())
 	}
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stderr, "migration complete: wrote output to %s\n", opts.migrate.OutDir)
+	if result.Report != nil {
+		errors, warnings, notes := result.Report.Counts()
+		if _, err := fmt.Fprintf(stderr, "findings: %d error(s), %d warning(s), %d note(s)\n",
+			errors, warnings, notes); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(stderr, "migration complete: wrote output to %s\n"+
+		"read %s before applying: it lists the URL and request-body changes clients must make\n",
+		opts.migrate.OutDir, filepath.Join(opts.migrate.OutDir, "migration-report.md"))
 	return err
 }
 
@@ -160,9 +180,12 @@ func normalizedVersion(version string) string {
 
 func parseArgs(args []string) (cliOptions, error) {
 	opts := cliOptions{migrate: migrate.Options{
-		ConfigDir:       "./config",
-		OutDir:          "./out",
-		NamespacePrefix: "ai-gateway",
+		ConfigDir:        "./config",
+		OutDir:           "./out",
+		NamespacePrefix:  "ai-gateway",
+		Formats:          []migrate.Format{migrate.FormatKongctl},
+		OperatorGateway:  migrate.OperatorGatewayKonnect,
+		KonnectServerURL: migrate.DefaultKonnectServerURL,
 	}}
 
 	for i := 0; i < len(args); i++ {
@@ -175,6 +198,17 @@ func parseArgs(args []string) (cliOptions, error) {
 		}
 
 		name, value, hasValue := strings.Cut(strings.TrimPrefix(token, "--"), "=")
+		if name == "strict" {
+			opts.migrate.Strict = true
+			if hasValue {
+				strict, err := strconv.ParseBool(value)
+				if err != nil {
+					return cliOptions{}, fmt.Errorf("invalid value for --strict: %w", err)
+				}
+				opts.migrate.Strict = strict
+			}
+			continue
+		}
 		var err error
 		value, i, err = nextFlagValue(args, i, name, value, hasValue)
 		if err != nil {
@@ -184,6 +218,22 @@ func parseArgs(args []string) (cliOptions, error) {
 		switch name {
 		case "input":
 			opts.migrate.InputPath = value
+		case "input-format":
+			opts.migrate.InputFormat, err = migrate.ParseInputFormat(value)
+		case "source-name":
+			opts.migrate.SourceName = value
+		case "format":
+			opts.migrate.Formats, err = migrate.ParseFormats(value)
+		case "operator-gateway":
+			if value != migrate.OperatorGatewayKonnect && value != migrate.OperatorGatewayOnPrem {
+				return cliOptions{}, fmt.Errorf("--operator-gateway must be %s or %s",
+					migrate.OperatorGatewayKonnect, migrate.OperatorGatewayOnPrem)
+			}
+			opts.migrate.OperatorGateway = value
+		case "k8s-namespace":
+			opts.migrate.K8sNamespace = value
+		case "konnect-server-url":
+			opts.migrate.KonnectServerURL = value
 		case "config":
 			opts.migrate.ConfigDir = value
 		case "ref":
@@ -196,6 +246,9 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.migrate.NamespacePrefix = value
 		default:
 			return cliOptions{}, fmt.Errorf("unknown flag --%s", name)
+		}
+		if err != nil {
+			return cliOptions{}, err
 		}
 	}
 

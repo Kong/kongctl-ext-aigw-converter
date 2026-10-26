@@ -15,14 +15,35 @@ command_paths:
         aliases:
           - aigw
     summary: Migrate AI Gateway configuration
-    description: Migrates Kong Gateway 3.x decK YAML into kongctl-ready AI Gateway resources.
-    usage: kongctl convert ai-gateway --input FILE [flags]
+    description: Migrates decK, Kong Operator, or Terraform configuration into AI Gateway resources.
+    usage: kongctl convert ai-gateway --input PATH [flags]
     examples:
       - kongctl convert ai-gateway --input kong.yaml --config ./config --out ./out
     flags:
       - name: input
         type: string
-        description: Path to the Kong Gateway decK YAML file. Required.
+        description: Source decK file, Kong Operator manifests, or Terraform config. Required.
+      - name: input-format
+        type: string
+        description: "Input format: auto (default), deck, kong-operator, terraform."
+      - name: source-name
+        type: string
+        description: Migrated control plane name (defaults to the input filename).
+      - name: strict
+        type: bool
+        description: Fail on migration findings instead of collecting them.
+      - name: format
+        type: string
+        description: "Comma-separated outputs: kongctl (default), deck, kong-operator, terraform."
+      - name: operator-gateway
+        type: string
+        description: "Kong Operator parent: konnect (default) or onprem."
+      - name: k8s-namespace
+        type: string
+        description: Namespace for Kong Operator manifests.
+      - name: konnect-server-url
+        type: string
+        description: Konnect API host for Operator and Terraform (default us.api.konghq.com).
       - name: config
         type: string
         description: Directory holding manual migration config.
