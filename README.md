@@ -34,14 +34,57 @@ GitHub's latest stable release.
 
 ## Usage
 
-Migrate a Kong Gateway 3.x decK file:
+Choose the output format for the destination where you will apply the
+migration. Input and output formats are independent: decK input does not
+select decK output. `--input-format` defaults to automatic detection, while
+`--format` defaults to `kongctl` regardless of the input format.
+
+Conversion runs locally and does not require a Konnect login. Before applying
+any generated configuration, review `migration-report.md`, resolve error
+findings, and populate required secrets.
+
+### Konnect
+
+Generate kongctl resources for a Konnect-managed AI Gateway:
 
 ```sh
 kongctl convert ai-gateway \
   --input kong.yaml \
   --config ./config \
+  --format kongctl \
   --out ./out
 ```
+
+Authenticate with Konnect using `kongctl login` or a configured personal
+access token before applying the reviewed output:
+
+```sh
+kongctl apply -f ./out
+```
+
+### Self-managed AI Gateway
+
+For a self-managed (on-premises) AI Gateway, explicitly select decK output:
+
+```sh
+kongctl convert ai-gateway \
+  --input kong.yaml \
+  --config ./config \
+  --format deck \
+  --out ./out
+```
+
+Apply the reviewed output using decK, configured to connect to your AI
+Gateway:
+
+```sh
+deck ai sync ./out/ai-gateway.yaml
+```
+
+`kongctl apply` targets Konnect and cannot apply this migration to a
+self-managed AI Gateway. A Konnect login is not needed for this decK flow.
+
+### Options
 
 `--input` is required and accepts a decK file, Kong Operator manifest file or
 directory, or Terraform file or directory. The remaining flags are optional:
@@ -89,12 +132,8 @@ each format is written into `--out/<format>`. Shared migration reports and
 secret scaffolding are written at the root of `--out`.
 
 The default kongctl output includes a managed AI Gateway and separate files
-for each non-empty child resource kind. Apply the complete migration in one
-operation:
-
-```sh
-kongctl apply -f ./out
-```
+for each non-empty child resource kind. decK output contains a single
+`ai-gateway.yaml` file for `deck ai sync`.
 
 Compared with v0.5.0, generated gateways now incorporate the source name in
 both their reference and display name. For an existing migration, supply your
@@ -110,8 +149,9 @@ conversion failures according to the migration library's rules.
 
 The updated library also writes secret scaffolding where needed. Populate the
 required values before applying and treat generated secret files as sensitive.
-For several formats, apply the appropriate subdirectory, such as
-`kongctl apply -f ./out/kongctl`.
+For several formats, apply the appropriate subdirectory for the destination:
+`kongctl apply -f ./out/kongctl` for Konnect, or
+`deck ai sync ./out/deck/ai-gateway.yaml` for a self-managed AI Gateway.
 
 Show the extension and migration library versions:
 
