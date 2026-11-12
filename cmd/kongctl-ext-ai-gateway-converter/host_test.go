@@ -60,7 +60,7 @@ func TestKongctlIntegration(t *testing.T) {
 	}
 	stdout, stderr, err = invoke("convert", "aigw", "version")
 	require.NoError(t, err, "%s", stderr)
-	require.Contains(t, stdout, "kong-ai-migration-tool: v0.0.0-20261026163831-b5cc58d56ed6")
+	require.Contains(t, stdout, "kong-ai-migration-tool: v0.0.0-20261112195131-01fcf5c501da")
 
 	for _, fixture := range []struct {
 		format, name, content string
