@@ -1,5 +1,5 @@
-github.com/Kong/kong-ai-migration-tool v0.0.0-20261026163831-b5cc58d56ed6 h1:MCkM1A0djf7hWStGezd9hYeH0khxB9D8bf1OeKIjvsU=
-github.com/Kong/kong-ai-migration-tool v0.0.0-20261026163831-b5cc58d56ed6/go.mod h1:6ej5uxRE5bwk20fH133o/M9/BBuVKXgb16PJHZpO0yE=
+github.com/Kong/kong-ai-migration-tool v0.0.0-20261112195131-01fcf5c501da h1:X32q3KGe/PCcCZv4H8QiQJssP1/dTvd7FnuOJJFh+DM=
+github.com/Kong/kong-ai-migration-tool v0.0.0-20261112195131-01fcf5c501da/go.mod h1:6ej5uxRE5bwk20fH133o/M9/BBuVKXgb16PJHZpO0yE=
 github.com/agext/levenshtein v1.2.1 h1:QmvMAjj2aEICytGiWzmxoE0x2KZvE0fvmqMOfy2tjT8=
 github.com/agext/levenshtein v1.2.1/go.mod h1:JEDfjyjHDjOF/1e4FlBE/PkbqA9OfWu2ki2W0IB5558=
 github.com/apparentlymart/go-textseg/v13 v13.0.0 h1:Y+KvPE1NYz0xl601PVImeQfFyEy6iT90AvPUL1NNfNw=
