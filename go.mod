@@ -3,7 +3,7 @@ module github.com/Kong/kongctl-ext-aigw-converter
 go 1.26.5
 
 require (
-	github.com/Kong/kong-ai-migration-tool v0.0.0-20261026163831-b5cc58d56ed6
+	github.com/Kong/kong-ai-migration-tool v0.0.0-20261112195131-01fcf5c501da
 	github.com/stretchr/testify v1.11.1
 )
 
